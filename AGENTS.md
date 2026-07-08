@@ -24,24 +24,21 @@ measurement of the major computational kernels.
 Two build systems; both now require `libpapi`:
 
 ```sh
-# Makefile  (serial + OpenMP)
-make CXX=g++ CXXFLAGS="-g -O3 -fopenmp -I. -Wall -DUSE_MPI=0" \
-         LDFLAGS="-g -O3 -fopenmp -lpapi"
-
-# Makefile  (MPI + OpenMP)
-make CXX=mpicxx CXXFLAGS="-g -O3 -fopenmp -I. -Wall -DUSE_MPI=1" \
-         LDFLAGS="-g -O3 -fopenmp -lpapi"
+# Makefile — simple targets (no compiler/flag fiddling)
+make              # builds all three: mpi, openmp, serial
+make mpi          # MPI + OpenMP   → lulesh2.0
+make openmp       # OpenMP-only    → lulesh2.0.openmp
+make serial       # serial (no MPI, no OpenMP) → lulesh2.0.serial
 
 # CMake
-```sh
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release \
-      -DMPI_CXX_COMPILER=`which mpicxx` ..
+      -DMPI_CXX_COMPILER="$(which mpicxx)" ..
 make
 ```
 
-The default Makefile target builds the MPI+OpenMP binary via `mpig++`; on systems
-where only `mpicxx` is available, override `CXX=mpicxx`.
+The three Makefile targets share no `.o` files, so all binaries can coexist and
+only out-of-date ones are rebuilt.
 
 ## PAPI HL instrumentation (fork addition)
 

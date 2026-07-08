@@ -13,7 +13,7 @@ If you have any questions or problems please contact:
 Also please send any notable results to Ian Karlin <karlin1@llnl.gov>
 as we are still evaluating the performance of this code.
 
-A Makefile and a CMake build system are provided.
+A Makefile (targets: `mpi`, `openmp`, `serial`, `all`) and a CMake build system are provided.
 
 ---
 
@@ -132,8 +132,18 @@ library via `find_library(PAPI_LIBRARY papi)`. The binary continues to
 work without PAPI counter availability at runtime — regions that cannot
 be measured produce no output rather than aborting.
 
-Example build with PAPI:
+Example builds with PAPI:
 
 ```sh
-make CXX=g++ CXXFLAGS="-g -O3 -fopenmp -I. -Wall -DUSE_MPI=0" LDFLAGS="-g -O3 -fopenmp -lpapi"
+# MPI + OpenMP (default)
+make mpi
+
+# OpenMP-only (no MPI)
+make openmp
+
+# Serial (no MPI, no OpenMP)
+make serial
+
+# All three at once
+make
 ```
