@@ -1,16 +1,16 @@
-#default build suggestion of MPI + OPENMP with gcc on Livermore machines you might have to change the compiler name
+# Build targets: make mpi, make openmp, make serial, make all (builds all three)
+# Default: make (builds all three binaries)
 
 SHELL = /bin/sh
 .SUFFIXES: .cc .o
 
-LULESH_EXEC = lulesh2.0
+LULESH_EXEC_MPI = lulesh2.0
+LULESH_EXEC_OPENMP = lulesh2.0.openmp
+LULESH_EXEC_SERIAL = lulesh2.0.serial
 
-MPI_INC = /opt/local/include/openmpi
-MPI_LIB = /opt/local/lib
-
-SERCXX = g++ -DUSE_MPI=0
-MPICXX = mpig++ -DUSE_MPI=1
-CXX = $(MPICXX)
+# Compilers — mpicxx wraps the right MPI flags automatically
+MPICXX = mpicxx
+SERCXX = g++
 
 SOURCES2.0 = \
 	lulesh.cc \
@@ -18,44 +18,59 @@ SOURCES2.0 = \
 	lulesh-viz.cc \
 	lulesh-util.cc \
 	lulesh-init.cc
-OBJECTS2.0 = $(SOURCES2.0:.cc=.o)
 
-#Default build suggestions with OpenMP for g++
-CXXFLAGS = -g -O3 -fopenmp -I. -Wall
-LDFLAGS = -g -O3 -fopenmp -lpapi
+# Separate object files so both builds coexist
+MPI_OBJECTS = $(SOURCES2.0:.cc=_mpi.o)
+SERIAL_OBJECTS = $(SOURCES2.0:.cc=_serial.o)
+OPENMP_OBJECTS = $(SOURCES2.0:.cc=_openmp.o)
+# MPI + OpenMP build flags
+MPI_CXXFLAGS = -DUSE_MPI=1 -g -O3 -fopenmp -I. -Wall
+MPI_LDFLAGS = -g -O3 -fopenmp -lpapi
 
-#Below are reasonable default flags for a serial build
-#CXXFLAGS = -g -O3 -I. -Wall
-#LDFLAGS = -g -O3 -lpapi
+# Serial (no MPI) build flags
+SERIAL_CXXFLAGS = -DUSE_MPI=0 -g -O3 -I. -Wall
+SERIAL_LDFLAGS = -g -O3 -lpapi
 
-#common places you might find silo on the Livermore machines.
-#SILO_INCDIR = /opt/local/include
-#SILO_LIBDIR = /opt/local/lib
-#SILO_INCDIR = ./silo/4.9/1.8.10.1/include
-#SILO_LIBDIR = ./silo/4.9/1.8.10.1/lib
+# Pattern rules
 
-#If you do not have silo and visit you can get them at:
-#silo:  https://wci.llnl.gov/codes/silo/downloads.html
-#visit: https://wci.llnl.gov/codes/visit/download.html
+# OpenMP-only (no MPI) build flags
+OPENMP_CXXFLAGS = -DUSE_MPI=0 -g -O3 -fopenmp -I. -Wall
+OPENMP_LDFLAGS = -g -O3 -fopenmp -lpapi
+%_mpi.o: %.cc lulesh.h
+	@echo "Building MPI $<"
+	$(MPICXX) -c $(MPI_CXXFLAGS) -o $@ $<
 
-#below is and example of how to make with silo, hdf5 to get vizulization by default all this is turned off.  All paths are Livermore specific.
-#CXXFLAGS = -g -DVIZ_MESH -I${SILO_INCDIR} -Wall -Wno-pragmas
-#LDFLAGS = -g -L${SILO_LIBDIR} -Wl,-rpath -Wl,${SILO_LIBDIR} -lsiloh5 -lhdf5
+%_serial.o: %.cc lulesh.h
+	@echo "Building serial $<"
+	$(SERCXX) -c $(SERIAL_CXXFLAGS) -o $@ $<
 
-.cc.o: lulesh.h
-	@echo "Building $<"
-	$(CXX) -c $(CXXFLAGS) -o $@  $<
+%_openmp.o: %.cc lulesh.h
+	@echo "Building OpenMP $<"
+	$(SERCXX) -c $(OPENMP_CXXFLAGS) -o $@ $<
 
-all: $(LULESH_EXEC)
+all: mpi openmp serial
 
-$(LULESH_EXEC): $(OBJECTS2.0)
-	@echo "Linking"
-	$(CXX) $(OBJECTS2.0) $(LDFLAGS) -lm -o $@
+.PHONY: all mpi openmp serial clean tar
+
+mpi: $(LULESH_EXEC_MPI)
+openmp: $(LULESH_EXEC_OPENMP)
+serial: $(LULESH_EXEC_SERIAL)
+
+$(LULESH_EXEC_MPI): $(MPI_OBJECTS)
+	@echo "Linking MPI"
+	$(MPICXX) $(MPI_OBJECTS) $(MPI_LDFLAGS) -lm -o $@
+
+$(LULESH_EXEC_OPENMP): $(OPENMP_OBJECTS)
+	@echo "Linking OpenMP"
+	$(SERCXX) $(OPENMP_OBJECTS) $(OPENMP_LDFLAGS) -lm -o $@
+
+$(LULESH_EXEC_SERIAL): $(SERIAL_OBJECTS)
+	@echo "Linking serial"
+	$(SERCXX) $(SERIAL_OBJECTS) $(SERIAL_LDFLAGS) -lm -o $@
 
 clean:
-	/bin/rm -f *.o *~ $(OBJECTS) $(LULESH_EXEC)
+	/bin/rm -f *_mpi.o *_serial.o *_openmp.o *~ $(LULESH_EXEC_MPI) $(LULESH_EXEC_SERIAL) $(LULESH_EXEC_OPENMP)
 	/bin/rm -rf *.dSYM
 
 tar: clean
-	cd .. ; tar cvf lulesh-2.0.tar LULESH-2.0 ; mv lulesh-2.0.tar LULESH-2.0
-
+	cd .. && tar cvf lulesh-2.0.tar LULESH-2.0 && mv lulesh-2.0.tar LULESH-2.0
