@@ -42,6 +42,16 @@ if (WITH_SILO)
   endif()
 endif()
 
+# PAPI profiling support
+find_library(PAPI_LIBRARY papi)
+if (PAPI_LIBRARY)
+  message(STATUS "Found PAPI: ${PAPI_LIBRARY}")
+  list(APPEND LULESH_EXTERNAL_LIBS ${PAPI_LIBRARY})
+else()
+  message(FATAL_ERROR "PAPI library not found (required for profiling instrumentation)")
+endif()
+
+
 set(LULESH_SOURCES
   lulesh-comm.cc
   lulesh-init.cc
