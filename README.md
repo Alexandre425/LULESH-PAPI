@@ -109,12 +109,13 @@ CMake variables:
 
 ## Notable changes in this fork
 
-PAPI High-Level (HL) profiling instrumentation was added to the major
-computational kernels in `lulesh.cc`. The following regions of interest
-are annotated with `PAPI_hl_region_begin`/`end` for hardware-counter
-measurement:
+The major computational kernels in `lulesh.cc` use the CARM region-marker ABI
+from `../../carm_roofline/native/dynamorio/carm_region.h`. Process identity is the MPI rank
+(or 0 for a single process); thread identity is the OpenMP thread number (or 0
+for a serial build). Identities are set before each marker so instruction
+counts and native timing can be matched reliably.
 
-**Per-thread** (inside `#pragma omp parallel` — accurate counters):
+**Per-thread regions** (inside `#pragma omp parallel`):
 
 - `CalcKinematics`
 - `CalcMonotonicQGradients`
@@ -122,17 +123,20 @@ measurement:
 - `EvalEOS_setup`
 - `UpdateVolumes`
 
-**Serial wrapper** (master-thread timing only):
+**Serial wrapper**:
 
 - `LagrangeNodal`
 
-Build now requires **libpapi** (development headers + shared library).
-The Makefile adds `-lpapi` to `LDFLAGS`; `CMakeLists.txt` finds the
-library via `find_library(PAPI_LIBRARY papi)`. The binary continues to
-work without PAPI counter availability at runtime — regions that cannot
-be measured produce no output rather than aborting.
+The default application links `carm_region_timing.c`; native marker timing is
+inactive unless `CARM_REGION_TIMING_OUTPUT` is set. CARM's DynamoRIO backend
+sets that variable for its separate uninstrumented timing pass. The default
+application and DynamoRIO client do not require PAPI.
 
-Example builds with PAPI:
+PAPI remains an optional comparison build. Build `papi-mpi`, `papi-openmp`, or
+`papi-serial` (or `make papi`) to compile the same marked regions with PAPI HL
+calls and link libpapi. For CMake, set `-DWITH_PAPI=ON`. The default
+DynamoRIO-targeted binaries never link PAPI.
+Example builds:
 
 ```sh
 # MPI + OpenMP (default)

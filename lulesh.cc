@@ -158,12 +158,28 @@ Additional BSD Notice
 #if _OPENMP
 # include <omp.h>
 #endif
-
+#ifdef CARM_ENABLE_PAPI
 #include <papi.h>
+#endif
+
+#include "carm_region.h"
 
 #include "lulesh.h"
 
-static inline void papi_check(int rc, const char* where) {
+static uint64_t carm_process_index = 0;
+static uint64_t carm_process_id = 0;
+
+static inline void carm_set_region_identity(void) {
+    uint64_t thread_id = 0;
+#if defined(_OPENMP)
+    thread_id = (uint64_t)omp_get_thread_num();
+#endif
+    carm_region_set_process_identity(carm_process_index, carm_process_id);
+    carm_region_set_thread_identity(thread_id, thread_id);
+}
+
+#ifdef CARM_ENABLE_PAPI
+static inline void carm_papi_check(int rc, const char *where) {
     if (rc != PAPI_OK) {
         fprintf(stderr, "[PAPI] %s: %s\n", where, PAPI_strerror(rc));
 #if USE_MPI
@@ -173,6 +189,26 @@ static inline void papi_check(int rc, const char* where) {
 #endif
     }
 }
+
+#define CARM_REGION_BEGIN(name) \
+    do { \
+        carm_set_region_identity(); \
+        carm_papi_check(PAPI_hl_region_begin(name), "PAPI_hl_region_begin"); \
+        carm_region_begin(name); \
+    } while (0)
+#define CARM_REGION_END(name) \
+    do { \
+        carm_region_end(name); \
+        carm_papi_check(PAPI_hl_region_end(name), "PAPI_hl_region_end"); \
+    } while (0)
+#else
+#define CARM_REGION_BEGIN(name) \
+    do { \
+        carm_set_region_identity(); \
+        carm_region_begin(name); \
+    } while (0)
+#define CARM_REGION_END(name) carm_region_end(name)
+#endif
 
  /* Work Routines */
 
@@ -1522,7 +1558,7 @@ void CalcKinematicsForElems( Domain &domain,
   // loop over all elements
 #pragma omp parallel
   {
-     papi_check(PAPI_hl_region_begin("CalcKinematics"), "PAPI_hl_region_begin");
+     CARM_REGION_BEGIN("CalcKinematics");
 
 #pragma omp for firstprivate(numElem, deltaTime)
   for( Index_t k=0 ; k<numElem ; ++k )
@@ -1583,7 +1619,7 @@ void CalcKinematicsForElems( Domain &domain,
     domain.dzz(k) = D[2];
 }
 
-     papi_check(PAPI_hl_region_end("CalcKinematics"), "PAPI_hl_region_end");
+     CARM_REGION_END("CalcKinematics");
   }
 }
 /******************************************/
@@ -1636,7 +1672,7 @@ void CalcMonotonicQGradientsForElems(Domain& domain)
 
 #pragma omp parallel
    {
-      papi_check(PAPI_hl_region_begin("CalcMonotonicQGradients"), "PAPI_hl_region_begin");
+      CARM_REGION_BEGIN("CalcMonotonicQGradients");
 
 #pragma omp for firstprivate(numElem)
    for (Index_t i = 0 ; i < numElem ; ++i ) {
@@ -1778,7 +1814,7 @@ void CalcMonotonicQGradientsForElems(Domain& domain)
       domain.delv_eta(i) = ax*dxv + ay*dyv + az*dzv ;
    }
 
-      papi_check(PAPI_hl_region_end("CalcMonotonicQGradients"), "PAPI_hl_region_end");
+      CARM_REGION_END("CalcMonotonicQGradients");
    }
 }
 
@@ -1795,7 +1831,7 @@ void CalcMonotonicQRegionForElems(Domain &domain, Int_t r,
 
 #pragma omp parallel
    {
-      papi_check(PAPI_hl_region_begin("CalcMonotonicQRegion"), "PAPI_hl_region_begin");
+      CARM_REGION_BEGIN("CalcMonotonicQRegion");
 #pragma omp for firstprivate(qlc_monoq, qqc_monoq, monoq_limiter_mult, monoq_max_slope, ptiny)
    for ( Index_t i = 0 ; i < domain.regElemSize(r); ++i ) {
       Index_t ielem = domain.regElemlist(r,i);
@@ -1948,7 +1984,7 @@ void CalcMonotonicQRegionForElems(Domain &domain, Int_t r,
       domain.ql(ielem) = qlin  ;
    }
 
-      papi_check(PAPI_hl_region_end("CalcMonotonicQRegion"), "PAPI_hl_region_end");
+      CARM_REGION_END("CalcMonotonicQRegion");
    }
 }
 
@@ -2271,7 +2307,7 @@ void EvalEOSForElems(Domain& domain, Real_t *vnewc,
       /* compress data, minimal set */
 #pragma omp parallel
       {
-         papi_check(PAPI_hl_region_begin("EvalEOS_setup"), "PAPI_hl_region_begin");
+         CARM_REGION_BEGIN("EvalEOS_setup");
 #pragma omp for nowait firstprivate(numElemReg)
          for (Index_t i=0; i<numElemReg; ++i) {
             Index_t ielem = regElemList[i];
@@ -2318,7 +2354,7 @@ void EvalEOSForElems(Domain& domain, Real_t *vnewc,
          for (Index_t i = 0 ; i < numElemReg ; ++i) {
             work[i] = Real_t(0.) ;
          }
-         papi_check(PAPI_hl_region_end("EvalEOS_setup"), "PAPI_hl_region_end");
+         CARM_REGION_END("EvalEOS_setup");
       }
       CalcEnergyForElems(p_new, e_new, q_new, bvc, pbvc,
                          p_old, e_old,  q_old, compression, compHalfStep,
@@ -2448,7 +2484,7 @@ void UpdateVolumesForElems(Domain &domain,
    if (length != 0) {
 #pragma omp parallel
    {
-      papi_check(PAPI_hl_region_begin("UpdateVolumes"), "PAPI_hl_region_begin");
+      CARM_REGION_BEGIN("UpdateVolumes");
 #pragma omp for firstprivate(length, v_cut)
       for(Index_t i=0 ; i<length ; ++i) {
          Real_t tmpV = domain.vnew(i) ;
@@ -2459,7 +2495,7 @@ void UpdateVolumesForElems(Domain &domain,
          domain.v(i) = tmpV ;
       }
 
-      papi_check(PAPI_hl_region_end("UpdateVolumes"), "PAPI_hl_region_end");
+      CARM_REGION_END("UpdateVolumes");
       }
    }
 
@@ -2644,17 +2680,17 @@ void LagrangeLeapFrog(Domain& domain)
    Domain_member fieldData[6] ;
 #endif
 
-   /* PAPI region "LagrangeNodal": force, acceleration, velocity, position.
-    * NOTE: called from serial code — master-thread counters only.
-    * For per-thread hardware-counter data, use the kernel-level parallel
-    * regions inside LagrangeElements (CalcKinematics, CalcMonotonicQGradients,
-    * CalcMonotonicQRegion, UpdateVolumes). */
-   papi_check(PAPI_hl_region_begin("LagrangeNodal"), "PAPI_hl_region_begin");
+   /* CARM region "LagrangeNodal": force, acceleration, velocity, position.
+    * NOTE: called from serial code — the master thread records this region.
+    * Kernel-level parallel regions inside LagrangeElements record each thread
+    * separately (CalcKinematics, CalcMonotonicQGradients, CalcMonotonicQRegion,
+    * and UpdateVolumes). */
+   CARM_REGION_BEGIN("LagrangeNodal");
    LagrangeNodal(domain);
-   papi_check(PAPI_hl_region_end("LagrangeNodal"), "PAPI_hl_region_end");
+   CARM_REGION_END("LagrangeNodal");
 
    /* calculate element quantities (i.e. velocity gradient & q), and update
-    * material states (per-thread PAPI regions inside each sub-kernel) */
+    * material states (per-thread CARM regions inside each sub-kernel) */
    LagrangeElements(domain, domain.numElem());
 
 #if USE_MPI
@@ -2719,16 +2755,14 @@ int main(int argc, char *argv[])
    myRank = 0;
 #endif
 
-   /* Initialize PAPI library (once per process) */
+   carm_process_index = (uint64_t)myRank;
+   carm_process_id = (uint64_t)myRank;
+
+#ifdef CARM_ENABLE_PAPI
    {
-      int papi_ver = PAPI_library_init(PAPI_VER_CURRENT);
-      if (papi_ver != PAPI_VER_CURRENT) {
-         if (papi_ver > 0)
-            fprintf(stderr, "[PAPI] version mismatch: header=%d runtime=%d\n",
-                    PAPI_VER_CURRENT, papi_ver);
-         else
-            fprintf(stderr, "[PAPI] PAPI_library_init failed: %s\n",
-                    PAPI_strerror(papi_ver));
+      int papi_version = PAPI_library_init(PAPI_VER_CURRENT);
+      if (papi_version != PAPI_VER_CURRENT) {
+         fprintf(stderr, "[PAPI] PAPI_library_init failed or version mismatched: %d\n", papi_version);
 #if USE_MPI
          MPI_Abort(MPI_COMM_WORLD, 1);
 #else
@@ -2737,9 +2771,10 @@ int main(int argc, char *argv[])
       }
    }
 #if defined(_OPENMP)
-   papi_check(
-       PAPI_thread_init((unsigned long (*)(void)) omp_get_thread_num),
+   carm_papi_check(
+       PAPI_thread_init((unsigned long (*)(void))omp_get_thread_num),
        "PAPI_thread_init");
+#endif
 #endif
 
    /* Set defaults that can be overridden by command line opts */

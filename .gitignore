@@ -2,4 +2,5 @@
 lulesh2.0
 lulesh2.0.serial
 lulesh2.0.openmp
+lulesh2.0.papi*
 papi_hl_output*
